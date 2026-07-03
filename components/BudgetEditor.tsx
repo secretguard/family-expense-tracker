@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { formatMonthLabel } from '@/lib/aggregate';
 
 export default function BudgetEditor({
   month,
@@ -43,37 +44,41 @@ export default function BudgetEditor({
   return (
     <div>
       {isCarriedForward && (
-        <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '0.75rem' }}>
-          No budget saved yet for {month} — showing last month's values as a starting point.
-          Edit and save to lock these in for {month}.
+        <p className="text-sm text-ink-muted mb-4">
+          No budget saved yet for {formatMonthLabel(month, true)} — showing last month's values as a
+          starting point. Edit and save to lock these in.
         </p>
       )}
-      <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 420 }}>
-        <tbody>
-          {allCategories.map((c) => (
-            <tr key={c}>
-              <td style={{ padding: '0.3rem 0.5rem 0.3rem 0' }}>{c}</td>
-              <td style={{ padding: '0.3rem 0' }}>
-                <input
-                  type="number"
-                  min="0"
-                  value={values[c]}
-                  onChange={(e) => setValues({ ...values, [c]: e.target.value })}
-                  style={{ width: '110px', padding: '0.3rem', boxSizing: 'border-box' }}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        style={{ marginTop: '0.75rem', padding: '0.5rem 1.1rem', cursor: 'pointer' }}
-      >
-        {saving ? 'Saving…' : 'Save budgets'}
-      </button>
-      {saved && <span style={{ marginLeft: '0.6rem', color: '#059669' }}>Saved.</span>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 max-w-2xl">
+        {allCategories.map((c) => (
+          <label key={c} className="flex items-center justify-between gap-3 py-1.5 border-b border-ink-line/60">
+            <span className="text-sm text-ink-text">{c}</span>
+            <span className="flex items-center gap-1">
+              <span className="text-ink-muted text-sm">₹</span>
+              <input
+                type="number"
+                min="0"
+                value={values[c]}
+                onChange={(e) => setValues({ ...values, [c]: e.target.value })}
+                placeholder="0"
+                className="w-28 bg-transparent text-right font-ledger tabular text-sm text-ink-text placeholder:text-ink-muted/40 border border-ink-line rounded-lg px-2 py-1 focus:border-brass-400"
+              />
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-3 mt-5">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-full bg-brass-400 text-ink-bg text-sm font-medium px-5 py-2 hover:bg-brass-300 disabled:opacity-50 transition-colors"
+        >
+          {saving ? 'Saving…' : 'Save budgets'}
+        </button>
+        {saved && <span className="text-sm text-mint-400">Saved.</span>}
+      </div>
     </div>
   );
 }

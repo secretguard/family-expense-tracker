@@ -1,48 +1,89 @@
-# Patch — Fix Month Column Auto-Converting to a Date Serial
-
-## What broke
-
-Writing expense rows used `valueInputOption: 'USER_ENTERED'`, which tells Google Sheets
-to parse each value like a human typed it in. Text like `"2026-07"` reads exactly like a
-date to Sheets' auto-detection, so it silently converted it into a date serial number
-(`46204`) instead of keeping it as plain text. `"2026-W27"` (the Week column) wasn't
-recognized as a date, so it stayed correct — that's why only Month broke.
+# Update — Redesigned Dashboard + AI Analyse
 
 ## What changed
 
-`lib/sheets.ts` — both `appendExpenseRow` and `updateExpenseCategory` now use
-`valueInputOption: 'RAW'` instead of `'USER_ENTERED'`. RAW stores exactly the string
-given, no auto-parsing. (Budgets and the state-tracking tabs already used RAW, so
-they were never affected.)
+**Design.** Full visual redesign — an "ink ledger" identity built for this specifically
+(not a generic template): deep charcoal-navy background, a warm brass/gold accent, a
+literary serif (Newsreader) for headings, clean sans (Manrope) for body text, and a
+monospace face (IBM Plex Mono) for every number — amounts line up like a real ledger
+instead of jittering as digits change. Category colors, chart tooltips, progress bars,
+and the login screen all follow the same system now.
 
-## Step 1 — Update your repo
+**Months now show as names.** "2026-07" style labels are gone from the UI — the trend
+chart, section headings, and budget editor all show "Jul 2026" or "Jul" instead. (The
+underlying data in the Sheet is unchanged — this is purely a display fix in `lib/aggregate.ts`.)
 
-Copy the updated `lib/sheets.ts` from this delivery into your existing repo folder,
-overwriting the old one. Only this one file changed.
+**New: AI Analyse.** A real button on the dashboard, sitting between "Budget vs actual"
+and "Edit budgets." Click it → the app gathers this month's category spend, your budgets,
+and the last 6 months' totals → sends that to OpenRouter → renders a written analysis
+(most expensive category, notable trends, specific money-saving tips) right on the page.
+This only runs when you click it — never automatically, never per logged expense.
+
+## Files touched
+
+New: `tailwind.config.js`, `postcss.config.js`, `app/globals.css`, `lib/openrouter.ts`,
+`app/api/analyse/route.ts`, `components/AIAnalyseCard.tsx`.
+
+Rewritten: `app/layout.tsx`, `app/page.tsx`, `app/login/page.tsx`,
+`components/CategoryPieChart.tsx`, `components/MonthlyTrendChart.tsx`,
+`components/BudgetVsActual.tsx`, `components/BudgetEditor.tsx`, `components/LogoutButton.tsx`.
+
+Extended: `lib/aggregate.ts` (added `formatMonthLabel`), `lib/config.ts` (added OpenRouter
+config), `package.json` (added `tailwindcss`, `postcss`, `autoprefixer`).
+
+Nothing about the Telegram ingestion path (`app/api/telegram-webhook`, `lib/parser.ts`,
+`lib/state.ts`) changed — that stays exactly as it was.
+
+## Step 1 — Get an OpenRouter API key
+
+1. Go to [openrouter.ai](https://openrouter.ai) → sign up → **Keys** → **Create Key**.
+2. Add a small amount of credit (a few dollars covers a very long time at this usage
+   pattern — a handful of analyses a week, not per message).
+3. Copy the key.
+
+## Step 2 — Update your repo
+
+Copy every file from this delivery into your existing repo folder, overwriting where
+names match. Then:
 
 ```
-git add lib/sheets.ts
-git commit -m "Fix: use RAW value input to stop Month column auto-converting to a date serial"
+git add .
+git commit -m "Redesign dashboard, alphabetic month labels, add AI Analyse"
 git push
 ```
 
-Vercel redeploys automatically — no env var changes needed for this fix.
+Vercel picks this up automatically.
 
-## Step 2 — Fix your existing bad rows manually
+## Step 3 — Add the new environment variable in Vercel
 
-The two rows already logged (`Fuel 1000`, `Rent 20000`) have `46204` sitting in the
-Month column instead of `2026-07`. New entries going forward will be correct
-automatically, but these two need a manual fix since the bad data is already written:
+Your existing env vars stay as they are. Add one new one:
 
-1. Open the `Expenses` sheet.
-2. Click cell **B2** (Month, row 2) → type `2026-07` → Enter.
-3. Click cell **B3** → type `2026-07` → Enter.
-4. If either cell auto-reformats itself back into a number/date after typing, first
-   select both cells → **Format → Number → Plain text** → then retype the value.
+Vercel → your project → **Settings → Environment Variables**:
 
-## Step 3 — Verify
+| Name | Value |
+|---|---|
+| `OPENROUTER_API_KEY` | the key from Step 1 |
+| `OPENROUTER_MODEL` | optional — leave unset to use the default (`anthropic/claude-3.5-haiku`), or set any [OpenRouter model slug](https://openrouter.ai/models) you prefer |
 
-1. Refresh the dashboard — "Spend by category" should now show your ₹1000 Fuel and
-   ₹20000 Rent entries instead of "No expenses logged yet this month."
-2. Send one more test message via Telegram (e.g. `Groceries 50`) → check the new row's
-   Month column shows `2026-07` as plain text, not a number.
+After adding it, trigger a redeploy (Vercel → Deployments → latest → **Redeploy**) since
+env var changes don't apply retroactively to an already-running build.
+
+## Step 4 — Verify
+
+1. Visit your dashboard URL, log in.
+2. Confirm the new look loads — dark background, serif headings, monospace numbers,
+   brass accent color, smooth donut/bar charts.
+3. Confirm the trend chart and section headers show month names ("Jul 2026") instead
+   of "2026-07".
+4. Scroll to **AI analysis** → click **AI Analyse** → after a few seconds you should see
+   a written breakdown with bullet-pointed tips appear below the button.
+5. Confirm Telegram logging and budget editing still work exactly as before — this
+   update didn't touch that logic.
+
+## A note on cost
+
+Each click of "AI Analyse" is one OpenRouter API call — at typical household-tracker
+usage (a few times a week, not per expense), cost stays in the range of cents per month
+regardless of which model you pick. If you want it even cheaper, smaller/faster models
+on OpenRouter's list work fine for this use case since the prompt is short, structured
+numeric data rather than long documents.

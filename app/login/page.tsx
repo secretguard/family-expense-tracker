@@ -28,26 +28,33 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ fontFamily: 'sans-serif', maxWidth: 360, margin: '5rem auto', padding: '1rem' }}>
-      <h1 style={{ fontSize: '1.4rem' }}>Family Expense Tracker</h1>
-      <form onSubmit={handleSubmit} style={{ marginTop: '1rem' }}>
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoFocus
-          style={{ width: '100%', padding: '0.6rem', fontSize: '1rem', boxSizing: 'border-box' }}
-        />
-        <button
-          type="submit"
-          disabled={loading}
-          style={{ marginTop: '0.75rem', padding: '0.6rem 1.2rem', width: '100%', cursor: 'pointer' }}
-        >
-          {loading ? 'Checking…' : 'Enter'}
-        </button>
-        {error && <p style={{ color: 'crimson', marginTop: '0.5rem' }}>{error}</p>}
-      </form>
+    <main className="min-h-screen flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <p className="text-xs tracking-widest uppercase text-brass-400 mb-2 text-center">Household ledger</p>
+        <h1 className="font-display text-2xl text-ink-text text-center mb-8">Family Expense Tracker</h1>
+
+        <form onSubmit={handleSubmit} className="rounded-2xl border border-ink-line bg-ink-surface shadow-card p-6">
+          <label className="block text-sm text-ink-muted mb-2" htmlFor="password">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoFocus
+            className="w-full bg-ink-bg border border-ink-line rounded-lg px-3 py-2.5 text-ink-text focus:border-brass-400"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="mt-4 w-full rounded-full bg-brass-400 text-ink-bg font-medium py-2.5 hover:bg-brass-300 disabled:opacity-60 transition-colors"
+          >
+            {loading ? 'Checking…' : 'Enter'}
+          </button>
+          {error && <p className="mt-3 text-sm text-coral-400 text-center">{error}</p>}
+        </form>
+      </div>
     </main>
   );
 }

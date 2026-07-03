@@ -21,3 +21,13 @@ export function aggregateByMonth(expenses: ExpenseRow[], lastN = 6): { month: st
   const months = Object.keys(map).sort();
   return months.slice(-lastN).map((month) => ({ month, total: map[month] }));
 }
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** '2026-07' -> 'Jul', or 'Jul 2026' with withYear */
+export function formatMonthLabel(monthKey: string, withYear = false): string {
+  const [year, m] = monthKey.split('-');
+  const idx = Number(m) - 1;
+  const name = MONTH_NAMES[idx] ?? monthKey;
+  return withYear ? `${name} ${year}` : name;
+}
