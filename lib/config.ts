@@ -22,5 +22,5 @@ export const config = {
   dashboardPassword: () => required('DASHBOARD_PASSWORD'),
   sessionSecret: () => required('SESSION_SECRET'),
   openRouterApiKey: () => required('OPENROUTER_API_KEY'),
-  openRouterModel: () => process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-haiku',
+  openRouterModel: () => process.env.OPENROUTER_MODEL || 'anthropic/claude-haiku-4.5',
 };
