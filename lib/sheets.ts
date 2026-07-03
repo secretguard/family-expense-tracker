@@ -58,7 +58,7 @@ export async function appendExpenseRow(entry: ExpenseEntry): Promise<number> {
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId: config.spreadsheetId(),
     range: 'Expenses!A:J',
-    valueInputOption: 'USER_ENTERED',
+    valueInputOption: 'RAW',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values },
   });
@@ -113,7 +113,7 @@ export async function updateExpenseCategory(rowNumber: number, category: string)
   await sheets.spreadsheets.values.update({
     spreadsheetId: config.spreadsheetId(),
     range: `Expenses!E${rowNumber}`,
-    valueInputOption: 'USER_ENTERED',
+    valueInputOption: 'RAW',
     requestBody: { values: [[category]] },
   });
 }

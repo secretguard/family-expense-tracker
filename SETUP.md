@@ -1,157 +1,48 @@
-# Setup Guide — Deploy to Vercel (free, always-on, no machine required)
+# Patch — Fix Month Column Auto-Converting to a Date Serial
 
-This replaces the earlier "self-host on your own machine" plan entirely. Vercel's free
-tier runs this app in the cloud permanently — nothing needs to stay powered on at your
-end, and you don't need a custom domain to get started (you'll get a free
-`something.vercel.app` URL that works immediately; a custom domain like
-`expenses.sarathg.me` can be added later, purely optional).
+## What broke
 
-**Current state of this project:** the Telegram ingestion backend AND the dashboard
-(charts, budget tracking, password-gated login) are both built now. No AI analysis yet —
-that's the next step after this is confirmed working.
+Writing expense rows used `valueInputOption: 'USER_ENTERED'`, which tells Google Sheets
+to parse each value like a human typed it in. Text like `"2026-07"` reads exactly like a
+date to Sheets' auto-detection, so it silently converted it into a date serial number
+(`46204`) instead of keeping it as plain text. `"2026-W27"` (the Week column) wasn't
+recognized as a date, so it stayed correct — that's why only Month broke.
 
----
+## What changed
 
-## Step 1 — Create free accounts (if you don't have them)
+`lib/sheets.ts` — both `appendExpenseRow` and `updateExpenseCategory` now use
+`valueInputOption: 'RAW'` instead of `'USER_ENTERED'`. RAW stores exactly the string
+given, no auto-parsing. (Budgets and the state-tracking tabs already used RAW, so
+they were never affected.)
 
-- **GitHub** (github.com) — free, used to store the code so Vercel can deploy it.
-- **Vercel** (vercel.com) — free, sign up using "Continue with GitHub" so they're linked automatically.
+## Step 1 — Update your repo
 
-## Step 2 — Get the code into GitHub
-
-1. Go to github.com → **New repository** → name it e.g. `family-expense-tracker` →
-   keep it **Private** → **Create repository**.
-2. On your computer, open a terminal in the `expense-webapp` folder (the one with
-   `package.json` in it) and run:
-   ```
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/family-expense-tracker.git
-   git push -u origin main
-   ```
-   (GitHub will show you this exact command block with your actual repo URL filled in
-   when you create the repo — you can copy it from there instead of retyping.)
-
-   Don't have `git` installed or a terminal you're comfortable with? Alternative: on
-   the new repo's GitHub page, click **uploading an existing file** and drag the whole
-   `expense-webapp` folder contents in through the browser instead. Slower for future
-   updates, but works for a one-time upload.
-
-## Step 3 — Import into Vercel
-
-1. On vercel.com, click **Add New → Project**.
-2. Select the `family-expense-tracker` repo from the list → **Import**.
-3. Framework preset should auto-detect as **Next.js** — leave defaults.
-4. **Before clicking Deploy**, expand **Environment Variables** and add every one of
-   these (values from your Google service account + Telegram setup):
-
-   | Name | Value |
-   |---|---|
-   | `TELEGRAM_BOT_TOKEN` | your rotated bot token |
-   | `ALLOWED_CHAT_ID` | `-1003472022685` |
-   | `ALLOWED_USER_IDS` | `8823308480,1029220387` |
-   | `USER_NAMES` | `{"8823308480":"Sarath","1029220387":"Nichu"}` |
-   | `SPREADSHEET_ID` | `1WT1zPftf1BebF0wstDcUYpfiP3nFi622my4yNQshYRg` |
-   | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | from your service account JSON (`client_email`) |
-   | `GOOGLE_PRIVATE_KEY` | from your service account JSON (`private_key`), keep the `\n` as literal text |
-   | `SETUP_SECRET` | make up any random string, e.g. `sg-setup-9f3k2` |
-   | `DASHBOARD_PASSWORD` | a real password — this gates the dashboard, share only with your wife |
-   | `SESSION_SECRET` | another random string, different from `SETUP_SECRET` — never shown to users |
-
-5. Click **Deploy**. Takes about a minute.
-6. You'll land on a project page showing a URL like
-   `https://family-expense-tracker-xyz123.vercel.app` — **this is your app's live
-   address**. Visit it — you should be redirected to a login page. Enter the
-   `DASHBOARD_PASSWORD` you set above to reach the dashboard.
-
-That URL is now permanent (until you change domain settings) and always live — no
-machine of yours needs to be running.
-
-## Step 4 — Create the Google service account (if not done yet)
-
-1. [Google Cloud Console](https://console.cloud.google.com/) → new/existing project →
-   **APIs & Services → Library** → enable **Google Sheets API**.
-2. **APIs & Services → Credentials → Create Credentials → Service Account** → name it
-   anything → skip role grants → done.
-3. Open it → **Keys → Add Key → Create new key → JSON** → downloads a file. Open it,
-   copy `client_email` and `private_key` — these are the two Vercel env vars above.
-
-## Step 5 — Share the Sheet with the service account
-
-Open your **Family Expense Tracker App** sheet → **Share** → paste the `client_email`
-address → set to **Editor** → Send/Share. Without this, every write silently fails
-with a permissions error.
-
-## Step 6 — Create the sheet tabs (one-time)
-
-Visit this in your browser, filling in your actual Vercel URL and the `SETUP_SECRET`
-you chose:
+Copy the updated `lib/sheets.ts` from this delivery into your existing repo folder,
+overwriting the old one. Only this one file changed.
 
 ```
-https://family-expense-tracker-xyz123.vercel.app/api/setup?secret=sg-setup-9f3k2
+git add lib/sheets.ts
+git commit -m "Fix: use RAW value input to stop Month column auto-converting to a date serial"
+git push
 ```
 
-You should get back JSON like:
-```json
-{"ok":true,"created":["Expenses","Categories","Budgets","ProcessedUpdates","PendingConfirmations"]}
-```
+Vercel redeploys automatically — no env var changes needed for this fix.
 
-Open the actual Google Sheet and confirm those 5 tabs now exist. Edit the `Categories`
-tab's aliases to match how you two actually phrase expenses, if you want.
+## Step 2 — Fix your existing bad rows manually
 
-## Step 7 — Point Telegram at the new webhook
+The two rows already logged (`Fuel 1000`, `Rent 20000`) have `46204` sitting in the
+Month column instead of `2026-07`. New entries going forward will be correct
+automatically, but these two need a manual fix since the bad data is already written:
 
-Detach from GAS and attach to Vercel in one call:
+1. Open the `Expenses` sheet.
+2. Click cell **B2** (Month, row 2) → type `2026-07` → Enter.
+3. Click cell **B3** → type `2026-07` → Enter.
+4. If either cell auto-reformats itself back into a number/date after typing, first
+   select both cells → **Format → Number → Plain text** → then retype the value.
 
-```
-https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://family-expense-tracker-xyz123.vercel.app/api/telegram-webhook&drop_pending_updates=true
-```
+## Step 3 — Verify
 
-Verify:
-```
-https://api.telegram.org/bot<TOKEN>/getWebhookInfo
-```
-Expect: your Vercel URL listed, `pending_update_count: 0`, no `last_error_message`.
-
-## Step 8 — Test
-
-Send a real burst — this is the exact scenario that broke GAS, so it's the right proof:
-
-1. `Fuel 100`
-2. `Groceries 200`
-3. `500 xyz123` (should say Uncategorized) → reply to it with `Groceries` → should update
-4. `/undo`
-5. Five or six more messages spaced a minute or two apart
-
-Check the `Expenses` tab after each — rows should land immediately, no duplicates, no
-silence.
-
-## Updating the code later
-
-Since this is already deployed via Vercel + GitHub, any future code changes just need:
-`git add .`, `git commit -m "..."`, `git push` — Vercel auto-deploys the new version
-within about a minute, same URL, no manual redeploy steps, no new env vars needed
-unless we add new features that require them.
-
-## Using the dashboard
-
-Visit your Vercel URL, log in with `DASHBOARD_PASSWORD`, and you'll see:
-- **This month's total** vs your overall budget (if set)
-- **Spend by category** pie chart, current month
-- **Monthly trend** bar chart, last 6 months
-- **Budget vs actual** per category, with red bars for anything over budget
-- **Edit budgets** — a form to set/update this month's budget per category (and
-  "Overall"). If you haven't set one yet for the current month, it pre-fills with last
-  month's values as a starting point — edit and save to lock them in.
-
-The dashboard reads live from the Sheet on every visit, so anything logged via Telegram
-shows up as soon as you refresh the page.
-
-## What's next
-
-Once you've used it for a few days and everything looks right, the last piece is the
-**AI Analyse** feature — an on-demand button that sends the period's data to OpenRouter
-and returns a written breakdown plus money-saving tips. Let me know when you're ready
-and we'll build that next.
+1. Refresh the dashboard — "Spend by category" should now show your ₹1000 Fuel and
+   ₹20000 Rent entries instead of "No expenses logged yet this month."
+2. Send one more test message via Telegram (e.g. `Groceries 50`) → check the new row's
+   Month column shows `2026-07` as plain text, not a number.
