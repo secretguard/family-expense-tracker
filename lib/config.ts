@@ -19,4 +19,6 @@ export const config = {
   googleServiceAccountEmail: () => required('GOOGLE_SERVICE_ACCOUNT_EMAIL'),
   googlePrivateKey: () => required('GOOGLE_PRIVATE_KEY').replace(/\\n/g, '\n'),
   setupSecret: () => process.env.SETUP_SECRET || '',
+  dashboardPassword: () => required('DASHBOARD_PASSWORD'),
+  sessionSecret: () => required('SESSION_SECRET'),
 };

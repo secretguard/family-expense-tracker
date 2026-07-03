@@ -6,10 +6,9 @@ end, and you don't need a custom domain to get started (you'll get a free
 `something.vercel.app` URL that works immediately; a custom domain like
 `expenses.sarathg.me` can be added later, purely optional).
 
-**Current state of this project:** only the Telegram ingestion backend exists so far
-(the part that replaces GAS). There is no dashboard UI yet — that's the next build step,
-after we confirm logging is rock solid. The `/` page you'll see after deploying is
-intentionally just a placeholder saying so.
+**Current state of this project:** the Telegram ingestion backend AND the dashboard
+(charts, budget tracking, password-gated login) are both built now. No AI analysis yet —
+that's the next step after this is confirmed working.
 
 ---
 
@@ -58,12 +57,14 @@ intentionally just a placeholder saying so.
    | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | from your service account JSON (`client_email`) |
    | `GOOGLE_PRIVATE_KEY` | from your service account JSON (`private_key`), keep the `\n` as literal text |
    | `SETUP_SECRET` | make up any random string, e.g. `sg-setup-9f3k2` |
+   | `DASHBOARD_PASSWORD` | a real password — this gates the dashboard, share only with your wife |
+   | `SESSION_SECRET` | another random string, different from `SETUP_SECRET` — never shown to users |
 
 5. Click **Deploy**. Takes about a minute.
 6. You'll land on a project page showing a URL like
    `https://family-expense-tracker-xyz123.vercel.app` — **this is your app's live
-   address**. Click it to confirm you see the placeholder page (title "Family Expense
-   Tracker" and a note that the dashboard doesn't exist yet).
+   address**. Visit it — you should be redirected to a login page. Enter the
+   `DASHBOARD_PASSWORD` you set above to reach the dashboard.
 
 That URL is now permanent (until you change domain settings) and always live — no
 machine of yours needs to be running.
@@ -129,12 +130,28 @@ silence.
 
 ## Updating the code later
 
-Any time we change the code, the update path is: push to GitHub (`git add .`,
-`git commit`, `git push`) → Vercel auto-deploys the new version within about a minute,
-same URL, zero manual redeploy steps.
+Since this is already deployed via Vercel + GitHub, any future code changes just need:
+`git add .`, `git commit -m "..."`, `git push` — Vercel auto-deploys the new version
+within about a minute, same URL, no manual redeploy steps, no new env vars needed
+unless we add new features that require them.
+
+## Using the dashboard
+
+Visit your Vercel URL, log in with `DASHBOARD_PASSWORD`, and you'll see:
+- **This month's total** vs your overall budget (if set)
+- **Spend by category** pie chart, current month
+- **Monthly trend** bar chart, last 6 months
+- **Budget vs actual** per category, with red bars for anything over budget
+- **Edit budgets** — a form to set/update this month's budget per category (and
+  "Overall"). If you haven't set one yet for the current month, it pre-fills with last
+  month's values as a starting point — edit and save to lock them in.
+
+The dashboard reads live from the Sheet on every visit, so anything logged via Telegram
+shows up as soon as you refresh the page.
 
 ## What's next
 
-Once you've confirmed logging holds up over real use (a day or two, both of you
-sending real expenses), we build the actual dashboard — charts, budget tracking, and
-the "AI Analyse" button — as pages inside this same project, deployed the same way.
+Once you've used it for a few days and everything looks right, the last piece is the
+**AI Analyse** feature — an on-demand button that sends the period's data to OpenRouter
+and returns a written breakdown plus money-saving tips. Let me know when you're ready
+and we'll build that next.

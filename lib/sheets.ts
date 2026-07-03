@@ -139,6 +139,110 @@ export async function getCategoryMap(): Promise<Record<string, string>> {
   return map;
 }
 
+export interface ExpenseRow {
+  date: string;
+  month: string;
+  week: string;
+  amount: number;
+  category: string;
+  type: string;
+  recurring: string;
+  note: string;
+  addedBy: string;
+  rawMessage: string;
+}
+
+export async function getAllExpenses(): Promise<ExpenseRow[]> {
+  const sheets = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'Expenses!A:J',
+  });
+  const rows = res.data.values ?? [];
+  return rows.slice(1).map((r) => ({
+    date: r[0] || '',
+    month: r[1] || '',
+    week: r[2] || '',
+    amount: Number(r[3] || 0),
+    category: r[4] || 'Uncategorized',
+    type: r[5] || 'Expense',
+    recurring: r[6] || 'No',
+    note: r[7] || '',
+    addedBy: r[8] || '',
+    rawMessage: r[9] || '',
+  }));
+}
+
+export async function getCategoryList(): Promise<string[]> {
+  const sheets = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'Categories!A:A',
+  });
+  const rows = res.data.values ?? [];
+  return rows.slice(1).map((r) => r[0]).filter(Boolean);
+}
+
+export type BudgetMap = Record<string, number>;
+
+/**
+ * Returns this month's budgets. If none have been saved yet, falls back to the
+ * most recent earlier month's values as a *preview* (isCarriedForward: true) —
+ * nothing is written until the user explicitly saves via upsertBudgetsForMonth.
+ */
+export async function getBudgetsForMonth(month: string): Promise<{ budgets: BudgetMap; isCarriedForward: boolean }> {
+  const sheets = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'Budgets!A:C',
+  });
+  const rows = (res.data.values ?? []).slice(1); // skip header
+
+  const thisMonthRows = rows.filter((r) => r[0] === month);
+  if (thisMonthRows.length > 0) {
+    const budgets: BudgetMap = {};
+    thisMonthRows.forEach((r) => { budgets[r[1]] = Number(r[2] || 0); });
+    return { budgets, isCarriedForward: false };
+  }
+
+  const priorMonths = Array.from(new Set(rows.map((r) => r[0]))).filter((m) => m < month).sort();
+  const latestPriorMonth = priorMonths[priorMonths.length - 1];
+  if (!latestPriorMonth) return { budgets: {}, isCarriedForward: false };
+
+  const priorRows = rows.filter((r) => r[0] === latestPriorMonth);
+  const budgets: BudgetMap = {};
+  priorRows.forEach((r) => { budgets[r[1]] = Number(r[2] || 0); });
+  return { budgets, isCarriedForward: true };
+}
+
+/** Replaces this month's budget rows with the given entries. Other months are untouched. */
+export async function upsertBudgetsForMonth(month: string, entries: BudgetMap): Promise<void> {
+  const sheets = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'Budgets!A:C',
+  });
+  const rows = res.data.values ?? [];
+  const header = rows[0] ?? ['Month', 'Category', 'Budget Amount'];
+  const otherMonthRows = rows.slice(1).filter((r) => r[0] !== month);
+  const newMonthRows = Object.entries(entries)
+    .filter(([, amount]) => amount > 0)
+    .map(([category, amount]) => [month, category, String(amount)]);
+
+  const allRows = [header, ...otherMonthRows, ...newMonthRows];
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'Budgets!A1:C100000',
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'Budgets!A1',
+    valueInputOption: 'RAW',
+    requestBody: { values: allRows },
+  });
+}
+
 const DEFAULT_CATEGORIES: [string, string][] = [
   ['Fuel', 'fuel, petrol, diesel, gas station'],
   ['Groceries', 'grocery, groceries, supermarket'],
