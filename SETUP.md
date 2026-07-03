@@ -1,89 +1,84 @@
-# Update — Redesigned Dashboard + AI Analyse
+# Update — Daily & Weekly Telegram Recap
 
-## What changed
+## What this adds
 
-**Design.** Full visual redesign — an "ink ledger" identity built for this specifically
-(not a generic template): deep charcoal-navy background, a warm brass/gold accent, a
-literary serif (Newsreader) for headings, clean sans (Manrope) for body text, and a
-monospace face (IBM Plex Mono) for every number — amounts line up like a real ledger
-instead of jittering as digits change. Category colors, chart tooltips, progress bars,
-and the login screen all follow the same system now.
+Two scheduled messages posted automatically to your Telegram group — no button, no
+dashboard visit needed:
 
-**Months now show as names.** "2026-07" style labels are gone from the UI — the trend
-chart, section headings, and budget editor all show "Jul 2026" or "Jul" instead. (The
-underlying data in the Sheet is unchanged — this is purely a display fix in `lib/aggregate.ts`.)
+- **Daily recap**, every evening — today's total vs yesterday's, percent change, and
+  the biggest category of the day.
+- **Weekly recap**, every Sunday evening — this week's total (rolling last 7 days) vs
+  the week before, percent change, and top 3 categories.
 
-**New: AI Analyse.** A real button on the dashboard, sitting between "Budget vs actual"
-and "Edit budgets." Click it → the app gathers this month's category spend, your budgets,
-and the last 6 months' totals → sends that to OpenRouter → renders a written analysis
-(most expensive category, notable trends, specific money-saving tips) right on the page.
-This only runs when you click it — never automatically, never per logged expense.
+Both fire once daily/weekly via **Vercel Cron** (built into your existing Vercel
+project, no new service to sign up for). Scheduled for the **9–10 PM IST window**.
 
-## Files touched
+## A timing note, so the behavior isn't a surprise
 
-New: `tailwind.config.js`, `postcss.config.js`, `app/globals.css`, `lib/openrouter.ts`,
-`app/api/analyse/route.ts`, `components/AIAnalyseCard.tsx`.
+Vercel's free (Hobby) plan only guarantees a cron fires **somewhere within its
+scheduled hour**, not at an exact minute — so "9:30 PM" might actually land anywhere
+between 9:00 and 9:59 PM. That's expected, not a bug. If you're on Vercel Pro later,
+timing becomes exact-to-the-minute, but Hobby is fine for a recap message where a
+30-minute window doesn't matter.
 
-Rewritten: `app/layout.tsx`, `app/page.tsx`, `app/login/page.tsx`,
-`components/CategoryPieChart.tsx`, `components/MonthlyTrendChart.tsx`,
-`components/BudgetVsActual.tsx`, `components/BudgetEditor.tsx`, `components/LogoutButton.tsx`.
+## Step 1 — Update your repo
 
-Extended: `lib/aggregate.ts` (added `formatMonthLabel`), `lib/config.ts` (added OpenRouter
-config), `package.json` (added `tailwindcss`, `postcss`, `autoprefixer`).
-
-Nothing about the Telegram ingestion path (`app/api/telegram-webhook`, `lib/parser.ts`,
-`lib/state.ts`) changed — that stays exactly as it was.
-
-## Step 1 — Get an OpenRouter API key
-
-1. Go to [openrouter.ai](https://openrouter.ai) → sign up → **Keys** → **Create Key**.
-2. Add a small amount of credit (a few dollars covers a very long time at this usage
-   pattern — a handful of analyses a week, not per message).
-3. Copy the key.
-
-## Step 2 — Update your repo
-
-Copy every file from this delivery into your existing repo folder, overwriting where
-names match. Then:
+Copy every file from this delivery into your repo folder, overwriting where names
+match. New files: `vercel.json`, `lib/timezone.ts`, `lib/recap.ts`,
+`app/api/cron/daily-recap/route.ts`, `app/api/cron/weekly-recap/route.ts`. Changed:
+`lib/aggregate.ts`, `lib/telegram.ts`, `lib/config.ts`, `middleware.ts`.
 
 ```
 git add .
-git commit -m "Redesign dashboard, alphabetic month labels, add AI Analyse"
+git commit -m "Add daily and weekly Telegram recap via Vercel Cron"
 git push
 ```
 
-Vercel picks this up automatically.
-
-## Step 3 — Add the new environment variable in Vercel
-
-Your existing env vars stay as they are. Add one new one:
+## Step 2 — Add the one new environment variable
 
 Vercel → your project → **Settings → Environment Variables**:
 
 | Name | Value |
 |---|---|
-| `OPENROUTER_API_KEY` | the key from Step 1 |
-| `OPENROUTER_MODEL` | optional — leave unset to use the default (`anthropic/claude-3.5-haiku`), or set any [OpenRouter model slug](https://openrouter.ai/models) you prefer |
+| `CRON_SECRET` | any long random string (a password generator works fine) |
 
-After adding it, trigger a redeploy (Vercel → Deployments → latest → **Redeploy**) since
-env var changes don't apply retroactively to an already-running build.
+You never call the cron routes yourself — Vercel reads `CRON_SECRET` automatically and
+sends it as an `Authorization: Bearer ...` header when it invokes them, and the routes
+check that header matches before doing anything. This stops randoms on the internet
+from spamming your Telegram group by hitting the URL directly.
 
-## Step 4 — Verify
+After adding it, redeploy (Vercel → Deployments → latest → **Redeploy**) since env var
+changes don't apply retroactively.
 
-1. Visit your dashboard URL, log in.
-2. Confirm the new look loads — dark background, serif headings, monospace numbers,
-   brass accent color, smooth donut/bar charts.
-3. Confirm the trend chart and section headers show month names ("Jul 2026") instead
-   of "2026-07".
-4. Scroll to **AI analysis** → click **AI Analyse** → after a few seconds you should see
-   a written breakdown with bullet-pointed tips appear below the button.
-5. Confirm Telegram logging and budget editing still work exactly as before — this
-   update didn't touch that logic.
+## Step 3 — Confirm the crons registered
 
-## A note on cost
+Vercel → your project → **Cron Jobs** tab (in the left sidebar or under Settings). You
+should see both:
+- `/api/cron/daily-recap` — `30 15 * * *`
+- `/api/cron/weekly-recap` — `30 15 * * 0`
 
-Each click of "AI Analyse" is one OpenRouter API call — at typical household-tracker
-usage (a few times a week, not per expense), cost stays in the range of cents per month
-regardless of which model you pick. If you want it even cheaper, smaller/faster models
-on OpenRouter's list work fine for this use case since the prompt is short, structured
-numeric data rather than long documents.
+If this tab is empty after deploying, the most common cause is `vercel.json` not
+landing at the actual **project root** (same level as `package.json`) — double check
+its location in your repo.
+
+## Step 4 — Test without waiting for the actual schedule
+
+Cron jobs are just regular HTTP endpoints Vercel happens to call on a timer — you can
+trigger them manually right now to confirm they work, using the `CRON_SECRET` you set:
+
+```
+curl -H "Authorization: Bearer YOUR_CRON_SECRET" https://your-app.vercel.app/api/cron/daily-recap
+curl -H "Authorization: Bearer YOUR_CRON_SECRET" https://your-app.vercel.app/api/cron/weekly-recap
+```
+
+No `curl` handy? Any HTTP client that lets you set a custom header works (Postman,
+Insomnia, or even a quick browser extension) — a plain browser visit won't work since
+it can't send the Authorization header.
+
+Each should return `{"ok":true}` and a message should appear in your Telegram group
+within a few seconds.
+
+## Step 5 — Let it run for real
+
+Once manually verified, just leave it — it'll fire on its own every evening and every
+Sunday evening going forward, no further action needed.

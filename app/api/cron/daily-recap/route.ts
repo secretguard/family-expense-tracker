@@ -1,0 +1,42 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getAllExpenses } from '@/lib/sheets';
+import { buildDailyRecap, formatChange, topCategory } from '@/lib/recap';
+import { formatDayLabel } from '@/lib/aggregate';
+import { sendTelegramMessage } from '@/lib/telegram';
+import { config } from '@/lib/config';
+
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  if (authHeader !== `Bearer ${config.cronSecret()}`) {
+    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const expenses = await getAllExpenses();
+    const recap = buildDailyRecap(expenses);
+
+    const lines: string[] = [];
+    lines.push(`📊 <b>Daily recap — ${formatDayLabel(recap.todayKey)}</b>`);
+    lines.push('');
+
+    if (recap.todayTotal === 0) {
+      lines.push('No expenses logged today.');
+    } else {
+      lines.push(`Today: ₹${recap.todayTotal.toLocaleString('en-IN')}`);
+      lines.push(`Yesterday: ₹${recap.yesterdayTotal.toLocaleString('en-IN')}`);
+      lines.push(formatChange(recap.todayTotal, recap.yesterdayTotal) + ' than yesterday');
+
+      const top = topCategory(recap.todayByCategory);
+      if (top) {
+        lines.push('');
+        lines.push(`Biggest today: ${top.category} (₹${top.amount.toLocaleString('en-IN')})`);
+      }
+    }
+
+    await sendTelegramMessage(config.allowedChatId(), lines.join('\n'), 'HTML');
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('daily-recap cron error:', err);
+    return NextResponse.json({ ok: false, error: 'Failed to send daily recap' }, { status: 500 });
+  }
+}

@@ -12,5 +12,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!login|api/login|api/telegram-webhook|api/setup|_next|favicon.ico).*)'],
+  matcher: ['/((?!login|api/login|api/telegram-webhook|api/setup|api/cron|_next|favicon.ico).*)'],
 };

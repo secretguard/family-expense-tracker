@@ -1,11 +1,15 @@
 import { config } from './config';
 
-export async function sendTelegramMessage(chatId: number | string, text: string): Promise<{ message_id: number } | null> {
+export async function sendTelegramMessage(
+  chatId: number | string,
+  text: string,
+  parseMode?: 'HTML'
+): Promise<{ message_id: number } | null> {
   const url = `https://api.telegram.org/bot${config.telegramBotToken()}/sendMessage`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify({ chat_id: chatId, text, ...(parseMode ? { parse_mode: parseMode } : {}) }),
   });
   const data = await res.json();
   if (!data.ok) {

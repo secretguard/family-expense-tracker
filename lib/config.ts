@@ -23,4 +23,5 @@ export const config = {
   sessionSecret: () => required('SESSION_SECRET'),
   openRouterApiKey: () => required('OPENROUTER_API_KEY'),
   openRouterModel: () => process.env.OPENROUTER_MODEL || 'anthropic/claude-haiku-4.5',
+  cronSecret: () => required('CRON_SECRET'),
 };

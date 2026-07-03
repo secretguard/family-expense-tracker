@@ -22,7 +22,7 @@ export function aggregateByMonth(expenses: ExpenseRow[], lastN = 6): { month: st
   return months.slice(-lastN).map((month) => ({ month, total: map[month] }));
 }
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** '2026-07' -> 'Jul', or 'Jul 2026' with withYear */
 export function formatMonthLabel(monthKey: string, withYear = false): string {
@@ -30,4 +30,12 @@ export function formatMonthLabel(monthKey: string, withYear = false): string {
   const idx = Number(m) - 1;
   const name = MONTH_NAMES[idx] ?? monthKey;
   return withYear ? `${name} ${year}` : name;
+}
+
+/** '2026-07-03' -> 'Jul 3' */
+export function formatDayLabel(dateKey: string): string {
+  const [, m, d] = dateKey.split('-');
+  const idx = Number(m) - 1;
+  const name = MONTH_NAMES[idx] ?? m;
+  return `${name} ${Number(d)}`;
 }
