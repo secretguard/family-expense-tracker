@@ -4,8 +4,8 @@ import { config } from '@/lib/config';
 
 /**
  * Visit this once after deploying: https://<your-app-url>/api/setup?secret=<SETUP_SECRET>
- * Creates the Expenses / Categories / Budgets / ProcessedUpdates / PendingConfirmations
- * tabs if they don't already exist. Safe to call more than once.
+ * Creates the Expenses / Categories / Budgets / ProcessedUpdates / PendingConfirmations /
+ * BudgetAlerts tabs if they don't already exist. Safe to call more than once.
  */
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get('secret');

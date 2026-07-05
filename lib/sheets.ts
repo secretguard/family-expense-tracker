@@ -243,6 +243,34 @@ export async function upsertBudgetsForMonth(month: string, entries: BudgetMap): 
   });
 }
 
+/** Set of "category|threshold" keys already alerted on for the given month. */
+export async function getSentBudgetAlerts(month: string): Promise<Set<string>> {
+  const sheets = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'BudgetAlerts!A:D',
+  });
+  const rows = (res.data.values ?? []).slice(1);
+  const sent = new Set<string>();
+  rows.forEach((r) => {
+    if (r[0] === month) sent.add(`${r[1]}|${r[2]}`);
+  });
+  return sent;
+}
+
+export async function recordBudgetAlerts(month: string, alerts: { category: string; threshold: number }[]): Promise<void> {
+  if (!alerts.length) return;
+  const sheets = await getSheetsClient();
+  const values = alerts.map((a) => [month, a.category, String(a.threshold), new Date().toISOString()]);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'BudgetAlerts!A:D',
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values },
+  });
+}
+
 const DEFAULT_CATEGORIES: [string, string][] = [
   ['Fuel', 'fuel, petrol, diesel, gas station'],
   ['Groceries', 'grocery, groceries, supermarket'],
@@ -266,7 +294,7 @@ export async function ensureSheetsExist(): Promise<string[]> {
   const existing = new Set((meta.data.sheets ?? []).map((s) => s.properties?.title));
   const created: string[] = [];
 
-  const toCreate = ['Expenses', 'Categories', 'Budgets', 'ProcessedUpdates', 'PendingConfirmations']
+  const toCreate = ['Expenses', 'Categories', 'Budgets', 'ProcessedUpdates', 'PendingConfirmations', 'BudgetAlerts']
     .filter((name) => !existing.has(name));
 
   if (toCreate.length) {
@@ -321,6 +349,15 @@ export async function ensureSheetsExist(): Promise<string[]> {
       range: 'PendingConfirmations!A1',
       valueInputOption: 'RAW',
       requestBody: { values: [['ChatId', 'MessageId', 'Row', 'Timestamp']] },
+    });
+  }
+
+  if (created.includes('BudgetAlerts')) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId(),
+      range: 'BudgetAlerts!A1',
+      valueInputOption: 'RAW',
+      requestBody: { values: [['Month', 'Category', 'Threshold', 'Timestamp']] },
     });
   }
 

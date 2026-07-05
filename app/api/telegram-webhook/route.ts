@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseExpenseMessage, findCategory } from '@/lib/parser';
-import { appendExpenseRow, deleteLastExpenseRow, updateExpenseCategory, getCategoryMap } from '@/lib/sheets';
+import { appendExpenseRow, deleteLastExpenseRow, updateExpenseCategory, getCategoryMap, getAllExpenses } from '@/lib/sheets';
 import { sendTelegramMessage, isAuthorized, getUserName } from '@/lib/telegram';
 import { isDuplicateUpdate, rememberConfirmation, getRowForConfirmation } from '@/lib/state';
+import { buildDailyRecap, buildWeeklyRecap } from '@/lib/recap';
+import { currentMonthKey, aggregateByCategory, formatMonthLabel, formatDayLabel } from '@/lib/aggregate';
+import { toISTDateKey } from '@/lib/timezone';
+
+const LIST_DEFAULT_COUNT = 10;
+const LIST_MAX_COUNT = 30;
 
 export async function POST(req: NextRequest) {
   try {
@@ -53,6 +59,8 @@ async function handleCommand(chatId: number, text: string) {
       '  1000 Fuel\n\n' +
       'Commands:\n' +
       '/undo — remove the last logged expense\n' +
+      '/summary — today, this week, and this month at a glance\n' +
+      '/list [n] — show the last n entries (default 10, max 30)\n' +
       '/help — show this message\n\n' +
       'Tip: reply to a confirmation message with the correct category name to fix a miscategorized entry.'
     );
@@ -69,7 +77,66 @@ async function handleCommand(chatId: number, text: string) {
     return;
   }
 
+  if (cmd === '/summary') {
+    await handleSummaryCommand(chatId);
+    return;
+  }
+
+  if (cmd === '/list') {
+    const arg = text.split(/\s+/)[1];
+    await handleListCommand(chatId, arg);
+    return;
+  }
+
   await sendTelegramMessage(chatId, 'Unknown command. Try /help.');
+}
+
+async function handleSummaryCommand(chatId: number) {
+  const expenses = await getAllExpenses();
+  const daily = buildDailyRecap(expenses);
+  const weekly = buildWeeklyRecap(expenses);
+  const month = currentMonthKey();
+  const monthByCategory = aggregateByCategory(expenses, month);
+  const monthTotal = Object.values(monthByCategory).reduce((a, b) => a + b, 0);
+  const topCategories = Object.entries(monthByCategory).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  const lines: string[] = [];
+  lines.push('📊 <b>Summary</b>');
+  lines.push('');
+  lines.push(`Today: ₹${daily.todayTotal.toLocaleString('en-IN')}`);
+  lines.push(`This week: ₹${weekly.thisWeekTotal.toLocaleString('en-IN')}`);
+  lines.push(`This month (${formatMonthLabel(month, true)}): ₹${monthTotal.toLocaleString('en-IN')}`);
+
+  if (topCategories.length) {
+    lines.push('');
+    lines.push('Top categories this month:');
+    topCategories.forEach(([category, amount], i) => {
+      lines.push(`${i + 1}. ${category} — ₹${amount.toLocaleString('en-IN')}`);
+    });
+  }
+
+  await sendTelegramMessage(chatId, lines.join('\n'), 'HTML');
+}
+
+async function handleListCommand(chatId: number, countArg?: string) {
+  let count = countArg ? parseInt(countArg, 10) : LIST_DEFAULT_COUNT;
+  if (!Number.isFinite(count) || count <= 0) count = LIST_DEFAULT_COUNT;
+  count = Math.min(count, LIST_MAX_COUNT);
+
+  const expenses = await getAllExpenses();
+  if (!expenses.length) {
+    await sendTelegramMessage(chatId, 'No expenses logged yet.');
+    return;
+  }
+
+  const recent = expenses.slice(-count).reverse();
+  const lines = recent.map((e, i) => {
+    const dateLabel = formatDayLabel(toISTDateKey(e.date));
+    const noteSuffix = e.note ? ` — ${e.note}` : '';
+    return `${i + 1}. ${dateLabel} · ₹${e.amount.toLocaleString('en-IN')} · ${e.category}${noteSuffix}`;
+  });
+
+  await sendTelegramMessage(chatId, `🧾 <b>Last ${recent.length} entries</b>\n\n${lines.join('\n')}`, 'HTML');
 }
 
 async function handleExpenseMessage(chatId: number, userId: number, text: string) {

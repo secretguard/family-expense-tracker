@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllExpenses } from '@/lib/sheets';
+import { getAllExpenses, getBudgetsForMonth, getSentBudgetAlerts, recordBudgetAlerts } from '@/lib/sheets';
 import { buildDailyRecap, formatChange, topCategory } from '@/lib/recap';
-import { formatDayLabel } from '@/lib/aggregate';
+import { currentMonthKey, aggregateByCategory, formatDayLabel } from '@/lib/aggregate';
+import { computeBudgetAlerts, formatBudgetAlertMessage } from '@/lib/budgetAlerts';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { config } from '@/lib/config';
 
@@ -34,6 +35,21 @@ export async function GET(req: NextRequest) {
     }
 
     await sendTelegramMessage(config.allowedChatId(), lines.join('\n'), 'HTML');
+
+    // Piggyback budget threshold alerts on this same cron invocation — Vercel Hobby
+    // only allows one cron job per schedule, so this avoids adding a second entry.
+    const month = currentMonthKey();
+    const categoryTotals = aggregateByCategory(expenses, month);
+    const budgetInfo = await getBudgetsForMonth(month);
+    const alreadySent = await getSentBudgetAlerts(month);
+    const newAlerts = computeBudgetAlerts(categoryTotals, budgetInfo.budgets, alreadySent);
+
+    if (newAlerts.length) {
+      const alertText = newAlerts.map(formatBudgetAlertMessage).join('\n\n');
+      await sendTelegramMessage(config.allowedChatId(), alertText, 'HTML');
+      await recordBudgetAlerts(month, newAlerts.map((a) => ({ category: a.category, threshold: a.threshold })));
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('daily-recap cron error:', err);

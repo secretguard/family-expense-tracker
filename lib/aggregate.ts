@@ -22,6 +22,35 @@ export function aggregateByMonth(expenses: ExpenseRow[], lastN = 6): { month: st
   return months.slice(-lastN).map((month) => ({ month, total: map[month] }));
 }
 
+export interface FixedVsDiscretionary {
+  fixedTotal: number;
+  discretionaryTotal: number;
+  fixedByCategory: Record<string, number>;
+  discretionaryByCategory: Record<string, number>;
+}
+
+export function aggregateFixedVsDiscretionary(expenses: ExpenseRow[], month: string): FixedVsDiscretionary {
+  const result: FixedVsDiscretionary = {
+    fixedTotal: 0,
+    discretionaryTotal: 0,
+    fixedByCategory: {},
+    discretionaryByCategory: {},
+  };
+
+  expenses.filter((e) => e.month === month).forEach((e) => {
+    const isFixed = String(e.recurring).trim().toLowerCase() === 'yes';
+    if (isFixed) {
+      result.fixedTotal += e.amount;
+      result.fixedByCategory[e.category] = (result.fixedByCategory[e.category] || 0) + e.amount;
+    } else {
+      result.discretionaryTotal += e.amount;
+      result.discretionaryByCategory[e.category] = (result.discretionaryByCategory[e.category] || 0) + e.amount;
+    }
+  });
+
+  return result;
+}
+
 export const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** '2026-07' -> 'Jul', or 'Jul 2026' with withYear */

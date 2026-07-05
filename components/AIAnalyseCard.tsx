@@ -45,10 +45,17 @@ function renderAnalysis(text: string) {
   return out;
 }
 
+const MAX_QUESTION_LENGTH = 500;
+
 export default function AIAnalyseCard() {
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [question, setQuestion] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
 
   async function handleAnalyse() {
     setLoading(true);
@@ -62,6 +69,35 @@ export default function AIAnalyseCard() {
       setError('Could not generate analysis right now. Try again in a moment.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleAsk() {
+    const trimmed = question.trim();
+    if (!trimmed) {
+      setAskError('Type a question first.');
+      return;
+    }
+    if (trimmed.length > MAX_QUESTION_LENGTH) {
+      setAskError(`Keep it under ${MAX_QUESTION_LENGTH} characters.`);
+      return;
+    }
+
+    setAsking(true);
+    setAskError(null);
+    try {
+      const res = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: trimmed }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Failed');
+      setAnswer(data.answer);
+    } catch {
+      setAskError('Could not get an answer right now. Try again in a moment.');
+    } finally {
+      setAsking(false);
     }
   }
 
@@ -92,6 +128,41 @@ export default function AIAnalyseCard() {
           {renderAnalysis(analysis)}
         </div>
       )}
+
+      <div className="mt-6 pt-5 border-t border-ink-line/60">
+        <p className="text-xs tracking-widest uppercase text-brass-400 mb-2">Ask a question</p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleAsk();
+          }}
+          className="flex items-center gap-2 flex-wrap sm:flex-nowrap"
+        >
+          <input
+            type="text"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="e.g. how much did we spend on eating out last month?"
+            maxLength={MAX_QUESTION_LENGTH}
+            className="flex-1 min-w-0 bg-transparent text-sm text-ink-text placeholder:text-ink-muted/50 border border-ink-line rounded-lg px-3 py-2 focus:border-brass-400 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={asking}
+            className="shrink-0 rounded-full bg-brass-400 text-ink-bg text-sm font-medium px-5 py-2 hover:bg-brass-300 disabled:opacity-60 transition-colors"
+          >
+            {asking ? 'Asking…' : 'Ask'}
+          </button>
+        </form>
+
+        {askError && <p className="mt-3 text-sm text-coral-400">{askError}</p>}
+
+        {answer && (
+          <div className="mt-4 rounded-xl border border-ink-line bg-ink-bg/50 p-4 sm:p-5">
+            {renderAnalysis(answer)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
