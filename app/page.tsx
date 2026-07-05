@@ -1,11 +1,10 @@
 import { getAllExpenses, getCategoryList, getBudgetsForMonth } from '@/lib/sheets';
-import { currentMonthKey, aggregateByCategory, aggregateByMonth, aggregateFixedVsDiscretionary, formatMonthLabel } from '@/lib/aggregate';
+import { currentMonthKey, aggregateByCategory, aggregateByMonth, formatMonthLabel } from '@/lib/aggregate';
 import CategoryPieChart from '@/components/CategoryPieChart';
 import MonthlyTrendChart from '@/components/MonthlyTrendChart';
 import BudgetVsActual from '@/components/BudgetVsActual';
 import BudgetEditor from '@/components/BudgetEditor';
 import AIAnalyseCard from '@/components/AIAnalyseCard';
-import FixedVsDiscretionaryCard from '@/components/FixedVsDiscretionaryCard';
 import LogoutButton from '@/components/LogoutButton';
 
 export const dynamic = 'force-dynamic'; // always fetch fresh sheet data, never statically cache
@@ -28,10 +27,6 @@ export default async function DashboardPage() {
     .map((c) => ({ category: c, budget: budgetInfo.budgets[c] ?? 0, actual: categoryTotals[c] ?? 0 }))
     .filter((r) => r.budget > 0 || r.actual > 0)
     .sort((a, b) => b.actual - a.actual);
-
-  const fixedVsDiscretionary = aggregateFixedVsDiscretionary(expenses, month);
-  const fixedByCategoryArr = Object.entries(fixedVsDiscretionary.fixedByCategory).map(([category, amount]) => ({ category, amount }));
-  const discretionaryByCategoryArr = Object.entries(fixedVsDiscretionary.discretionaryByCategory).map(([category, amount]) => ({ category, amount }));
 
   const overallActual = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
   const overallBudget = budgetInfo.budgets['Overall'] ?? 0;
@@ -110,17 +105,6 @@ export default async function DashboardPage() {
         <section className="rounded-2xl border border-ink-line bg-ink-surface shadow-card p-5 sm:p-6 mb-6">
           <h2 className="font-display text-lg text-ink-text mb-4">Budget vs actual</h2>
           <BudgetVsActual rows={budgetRows} />
-        </section>
-
-        {/* Fixed vs discretionary */}
-        <section className="rounded-2xl border border-ink-line bg-ink-surface shadow-card p-5 sm:p-6 mb-6">
-          <h2 className="font-display text-lg text-ink-text mb-4">Fixed vs discretionary</h2>
-          <FixedVsDiscretionaryCard
-            fixedTotal={fixedVsDiscretionary.fixedTotal}
-            discretionaryTotal={fixedVsDiscretionary.discretionaryTotal}
-            fixedByCategory={fixedByCategoryArr}
-            discretionaryByCategory={discretionaryByCategoryArr}
-          />
         </section>
 
         {/* AI Analyse */}
