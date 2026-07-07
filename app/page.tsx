@@ -5,6 +5,7 @@ import MonthlyTrendChart from '@/components/MonthlyTrendChart';
 import BudgetVsActual from '@/components/BudgetVsActual';
 import BudgetEditor from '@/components/BudgetEditor';
 import AIAnalyseCard from '@/components/AIAnalyseCard';
+import OutflowBreakdownCard from '@/components/OutflowBreakdownCard';
 import LogoutButton from '@/components/LogoutButton';
 
 export const dynamic = 'force-dynamic'; // always fetch fresh sheet data, never statically cache
@@ -43,6 +44,7 @@ export default async function DashboardPage() {
     .sort((a, b) => b.actual - a.actual);
 
   const overallActual = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
+  const totalOutflow = overallActual + investedTotal + lentTotal;
   const overallBudget = budgetInfo.budgets['Overall'] ?? 0;
   const overallPct = overallBudget > 0 ? Math.min(100, Math.round((overallActual / overallBudget) * 100)) : 0;
   const overallOver = overallBudget > 0 && overallActual > overallBudget;
@@ -117,6 +119,17 @@ export default async function DashboardPage() {
               <span className="font-ledger tabular">(₹{topCategory.amount.toLocaleString('en-IN')})</span>
             </p>
           )}
+        </section>
+
+        {/* This month's outflow breakdown */}
+        <section className="rounded-2xl border border-ink-line bg-ink-surface shadow-card p-5 sm:p-6 mb-6">
+          <h2 className="font-display text-lg text-ink-text mb-4">This month's outflow breakdown</h2>
+          <OutflowBreakdownCard
+            totalOutflow={totalOutflow}
+            actualSpend={overallActual}
+            invested={investedTotal}
+            lentOut={lentTotal}
+          />
         </section>
 
         {/* Category + trend grid */}
