@@ -20,6 +20,7 @@ export interface ExpenseEntry {
   date: Date;
   amount: number;
   category: string;
+  type: string; // 'Expense' | 'Investment' | 'Transfer' — see Categories tab
   note: string;
   addedBy: string;
   rawMessage: string;
@@ -48,7 +49,7 @@ export async function appendExpenseRow(entry: ExpenseEntry): Promise<number> {
     formatWeek(entry.date),
     entry.amount,
     entry.category,
-    'Expense',
+    entry.type,
     'No',
     entry.note,
     entry.addedBy,
@@ -108,35 +109,58 @@ export async function deleteLastExpenseRow(): Promise<{ amount: number; category
   return { amount, category };
 }
 
-export async function updateExpenseCategory(rowNumber: number, category: string): Promise<void> {
+/** Updates both the Category and Type columns together — they must never drift apart, since Type is what the budget/spend split relies on. */
+export async function updateExpenseCategory(rowNumber: number, category: string, type: string): Promise<void> {
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.update({
     spreadsheetId: config.spreadsheetId(),
-    range: `Expenses!E${rowNumber}`,
+    range: `Expenses!E${rowNumber}:F${rowNumber}`,
     valueInputOption: 'RAW',
-    requestBody: { values: [[category]] },
+    requestBody: { values: [[category, type]] },
   });
 }
 
-/** alias (lowercase) -> Category name */
-export async function getCategoryMap(): Promise<Record<string, string>> {
+export interface CategoryInfo {
+  aliasMap: Record<string, string>; // alias (lowercase) -> Category name
+  typeMap: Record<string, string>; // Category name -> Type ('Expense' | 'Investment' | 'Transfer')
+}
+
+/** Reads the Categories tab once and returns both lookups it holds. */
+export async function getCategoryInfo(): Promise<CategoryInfo> {
   const sheets = await getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: config.spreadsheetId(),
-    range: 'Categories!A:B',
+    range: 'Categories!A:C',
   });
   const rows = res.data.values ?? [];
-  const map: Record<string, string> = {};
+  const aliasMap: Record<string, string> = {};
+  const typeMap: Record<string, string> = {};
+
   for (let i = 1; i < rows.length; i++) { // skip header
     const category = rows[i][0];
     const aliasesRaw = rows[i][1];
-    if (!category || !aliasesRaw) continue;
+    const type = rows[i][2];
+    if (!category) continue;
+
+    typeMap[category] = type || 'Expense';
+
+    if (!aliasesRaw) continue;
     String(aliasesRaw).split(',').forEach((a) => {
       const clean = a.trim().toLowerCase();
-      if (clean) map[clean] = category;
+      if (clean) aliasMap[clean] = category;
     });
   }
-  return map;
+
+  return { aliasMap, typeMap };
+}
+
+/**
+ * Category name -> Type. Categories with no Type recorded, or not present in the
+ * Categories tab at all (e.g. the 'Overall' pseudo-category used only in Budgets),
+ * default to 'Expense' — the safe assumption for "does this count as spend."
+ */
+export async function getCategoryTypeMap(): Promise<Record<string, string>> {
+  return (await getCategoryInfo()).typeMap;
 }
 
 export interface ExpenseRow {
@@ -271,17 +295,23 @@ export async function recordBudgetAlerts(month: string, alerts: { category: stri
   });
 }
 
-const DEFAULT_CATEGORIES: [string, string][] = [
-  ['Fuel', 'fuel, petrol, diesel, gas station'],
-  ['Groceries', 'grocery, groceries, supermarket'],
-  ['Dining', 'dining, restaurant, food, eating out, takeout'],
-  ['Utilities', 'electricity, water bill, gas bill, utility, utilities, wifi, internet'],
-  ['Transport', 'uber, ola, cab, taxi, bus, metro, transport'],
-  ['Kids', 'kids, school, tuition, daycare'],
-  ['Rent', 'rent'],
-  ['Health', 'health, medicine, doctor, pharmacy, hospital'],
-  ['Shopping', 'shopping, clothes, amazon, flipkart'],
-  ['Misc', 'misc, other'],
+const DEFAULT_CATEGORIES: [string, string, string][] = [
+  ['Fuel', 'fuel, petrol, diesel, gas station', 'Expense'],
+  ['Groceries', 'grocery, groceries, supermarket, vegetables, oats, milk, fish, banana, fruits', 'Expense'],
+  ['Dining', 'dining, restaurant, food, eating out, takeout, bakery, shake, ice cream', 'Expense'],
+  ['Utilities', 'electricity, water bill, gas bill, utility, utilities, wifi, internet, gas, mobile, recharge', 'Expense'],
+  ['Transport', 'uber, ola, cab, taxi, bus, metro, transport', 'Expense'],
+  ['Baby', 'kids, similac, diaper, atogla, body lotion, baby soap, oinments, drops, cerlac powders, cerlac, powder', 'Expense'],
+  ['Rent', 'rent', 'Expense'],
+  ['Gym', 'gym, chicken, yogurt, cucumber, carrot', 'Expense'],
+  ['Health', 'health, medicine, doctor, pharmacy, hospital', 'Expense'],
+  ['Shopping', 'shopping, clothes, amazon, flipkart, fancy, cream, sunscreen', 'Expense'],
+  ['wellness', 'facial, spa, threading, detan, cosmetic, cosmetics, salon', 'Expense'],
+  ['Misc', 'misc, other', 'Expense'],
+  ['Debt repayment', 'emi, loan emi, repayment', 'Expense'],
+  ['Leisure', 'cigarette, cig, drinks, alcohol, liquor, smoke', 'Expense'],
+  ['Lending', 'lend, lent, koduthu, given to, gave, loan given', 'Transfer'],
+  ['Investments', 'chitti, chit, chit fund, sip, fd, rd, mutual fund, investment, invest', 'Investment'],
 ];
 
 /**
@@ -321,7 +351,7 @@ export async function ensureSheetsExist(): Promise<string[]> {
       spreadsheetId: config.spreadsheetId(),
       range: 'Categories!A1',
       valueInputOption: 'RAW',
-      requestBody: { values: [['Category', 'Aliases (comma separated)'], ...DEFAULT_CATEGORIES] },
+      requestBody: { values: [['Category', 'Aliases (comma separated)', 'Type'], ...DEFAULT_CATEGORIES] },
     });
   }
 
@@ -362,4 +392,28 @@ export async function ensureSheetsExist(): Promise<string[]> {
   }
 
   return created;
+}
+
+/**
+ * One-time migration: overwrites the Categories tab with the exact Category/Aliases/Type
+ * table baked into DEFAULT_CATEGORIES, replacing whatever rows are already there. Unlike
+ * ensureSheetsExist() (safe to call repeatedly — only fills in missing tabs), this is
+ * destructive by design, since the whole point is to replace stale category rows when
+ * migrating to the Type (Expense/Investment/Transfer) column. Only meant to be triggered
+ * once, deliberately, via a guarded setup route — see app/api/setup/categories/route.ts.
+ */
+export async function seedCategories(): Promise<void> {
+  const sheets = await getSheetsClient();
+  const header = ['Category', 'Aliases (comma separated)', 'Type'];
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'Categories!A1:C100000',
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: config.spreadsheetId(),
+    range: 'Categories!A1',
+    valueInputOption: 'RAW',
+    requestBody: { values: [header, ...DEFAULT_CATEGORIES] },
+  });
 }

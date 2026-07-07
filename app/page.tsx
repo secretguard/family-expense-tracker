@@ -1,4 +1,4 @@
-import { getAllExpenses, getCategoryList, getBudgetsForMonth } from '@/lib/sheets';
+import { getAllExpenses, getCategoryList, getBudgetsForMonth, getCategoryTypeMap } from '@/lib/sheets';
 import { currentMonthKey, aggregateByCategory, aggregateByMonth, formatMonthLabel } from '@/lib/aggregate';
 import CategoryPieChart from '@/components/CategoryPieChart';
 import MonthlyTrendChart from '@/components/MonthlyTrendChart';
@@ -12,17 +12,31 @@ export const dynamic = 'force-dynamic'; // always fetch fresh sheet data, never 
 export default async function DashboardPage() {
   const month = currentMonthKey();
 
-  const [expenses, categories, budgetInfo] = await Promise.all([
+  const [expenses, categories, budgetInfo, categoryTypes] = await Promise.all([
     getAllExpenses(),
     getCategoryList(),
     getBudgetsForMonth(month),
+    getCategoryTypeMap(),
   ]);
 
-  const categoryTotals = aggregateByCategory(expenses, month);
-  const pieData = Object.entries(categoryTotals).map(([category, amount]) => ({ category, amount }));
-  const monthlyTrend = aggregateByMonth(expenses, 6);
+  const typeOf = (category: string) => categoryTypes[category] ?? 'Expense';
 
-  const allCategoriesForBudget = Array.from(new Set([...categories, ...Object.keys(categoryTotals)]));
+  // True spend excludes Investment/Transfer categories (chit funds, SIPs, money lent
+  // out) — those are real outflows but not "spend," and shouldn't count toward budgets,
+  // budget alerts, or the category/trend charts below. They're surfaced separately in
+  // the hero card instead.
+  const monthExpenses = expenses.filter((e) => e.month === month);
+  const spendExpenses = monthExpenses.filter((e) => typeOf(e.category) === 'Expense');
+  const investedTotal = monthExpenses.filter((e) => typeOf(e.category) === 'Investment').reduce((a, b) => a + b.amount, 0);
+  const lentTotal = monthExpenses.filter((e) => typeOf(e.category) === 'Transfer').reduce((a, b) => a + b.amount, 0);
+
+  const categoryTotals = aggregateByCategory(spendExpenses, month);
+  const pieData = Object.entries(categoryTotals).map(([category, amount]) => ({ category, amount }));
+  const expenseOnlyAll = expenses.filter((e) => typeOf(e.category) === 'Expense');
+  const monthlyTrend = aggregateByMonth(expenseOnlyAll, 6);
+
+  const allCategoriesForBudget = Array.from(new Set([...categories, ...Object.keys(categoryTotals)]))
+    .filter((c) => typeOf(c) === 'Expense');
   const budgetRows = allCategoriesForBudget
     .map((c) => ({ category: c, budget: budgetInfo.budgets[c] ?? 0, actual: categoryTotals[c] ?? 0 }))
     .filter((r) => r.budget > 0 || r.actual > 0)
@@ -49,7 +63,7 @@ export default async function DashboardPage() {
 
         {/* Hero card */}
         <section className="rounded-2xl border border-ink-line bg-ink-surface shadow-card p-6 sm:p-8 mb-6">
-          <p className="text-sm text-ink-muted">{formatMonthLabel(month, true)}</p>
+          <p className="text-sm text-ink-muted">{formatMonthLabel(month, true)} spend</p>
           <div className="flex items-end gap-3 mt-1 flex-wrap">
             <span className="font-display font-ledger text-4xl sm:text-5xl text-ink-text tabular">
               ₹{overallActual.toLocaleString('en-IN')}
@@ -60,6 +74,23 @@ export default async function DashboardPage() {
               </span>
             )}
           </div>
+
+          {(investedTotal > 0 || lentTotal > 0) && (
+            <p className="text-xs text-ink-muted mt-1.5">
+              +{' '}
+              {investedTotal > 0 && (
+                <>
+                  <span className="font-ledger tabular">₹{investedTotal.toLocaleString('en-IN')}</span> invested
+                </>
+              )}
+              {investedTotal > 0 && lentTotal > 0 && ' · '}
+              {lentTotal > 0 && (
+                <>
+                  <span className="font-ledger tabular">₹{lentTotal.toLocaleString('en-IN')}</span> lent out
+                </>
+              )}
+            </p>
+          )}
 
           {overallBudget > 0 ? (
             <div className="mt-4">

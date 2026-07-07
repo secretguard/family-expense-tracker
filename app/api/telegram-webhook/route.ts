@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseExpenseMessage, findCategory } from '@/lib/parser';
-import { appendExpenseRow, deleteLastExpenseRow, updateExpenseCategory, getCategoryMap, getAllExpenses } from '@/lib/sheets';
+import { appendExpenseRow, deleteLastExpenseRow, updateExpenseCategory, getCategoryInfo, getAllExpenses } from '@/lib/sheets';
 import { sendTelegramMessage, isAuthorized, getUserName } from '@/lib/telegram';
 import { isDuplicateUpdate, rememberConfirmation, getRowForConfirmation } from '@/lib/state';
 import { buildDailyRecap, buildWeeklyRecap } from '@/lib/recap';
 import { currentMonthKey, aggregateByCategory, formatMonthLabel, formatDayLabel } from '@/lib/aggregate';
 import { toISTDateKey } from '@/lib/timezone';
+
+/** Short parenthetical appended to confirmation messages for non-Expense categories, so it's clear at a glance the entry isn't counted as spend. */
+function typeAnnotation(type: string): string {
+  if (type === 'Investment') return ' (investment — not counted as spend)';
+  if (type === 'Transfer') return ' (lent out — not counted as spend)';
+  return '';
+}
 
 const LIST_DEFAULT_COUNT = 10;
 const LIST_MAX_COUNT = 30;
@@ -92,13 +99,23 @@ async function handleCommand(chatId: number, text: string) {
 }
 
 async function handleSummaryCommand(chatId: number) {
-  const expenses = await getAllExpenses();
-  const daily = buildDailyRecap(expenses);
-  const weekly = buildWeeklyRecap(expenses);
+  const [expenses, { typeMap }] = await Promise.all([getAllExpenses(), getCategoryInfo()]);
+  const typeOf = (category: string) => typeMap[category] ?? 'Expense';
+
+  // Today/week/month totals reflect true spend only (Expense-type categories) —
+  // matches the dashboard's primary number. Investments/lending are called out
+  // separately below, same pattern as the dashboard hero card.
+  const spendExpenses = expenses.filter((e) => typeOf(e.category) === 'Expense');
+  const daily = buildDailyRecap(spendExpenses);
+  const weekly = buildWeeklyRecap(spendExpenses);
   const month = currentMonthKey();
-  const monthByCategory = aggregateByCategory(expenses, month);
+  const monthByCategory = aggregateByCategory(spendExpenses, month);
   const monthTotal = Object.values(monthByCategory).reduce((a, b) => a + b, 0);
   const topCategories = Object.entries(monthByCategory).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  const monthExpenses = expenses.filter((e) => e.month === month);
+  const investedTotal = monthExpenses.filter((e) => typeOf(e.category) === 'Investment').reduce((a, b) => a + b.amount, 0);
+  const lentTotal = monthExpenses.filter((e) => typeOf(e.category) === 'Transfer').reduce((a, b) => a + b.amount, 0);
 
   const lines: string[] = [];
   lines.push('📊 <b>Summary</b>');
@@ -113,6 +130,14 @@ async function handleSummaryCommand(chatId: number) {
     topCategories.forEach(([category, amount], i) => {
       lines.push(`${i + 1}. ${category} — ₹${amount.toLocaleString('en-IN')}`);
     });
+  }
+
+  if (investedTotal > 0 || lentTotal > 0) {
+    const parts: string[] = [];
+    if (investedTotal > 0) parts.push(`₹${investedTotal.toLocaleString('en-IN')} invested`);
+    if (lentTotal > 0) parts.push(`₹${lentTotal.toLocaleString('en-IN')} lent out`);
+    lines.push('');
+    lines.push(`Also this month: ${parts.join(' · ')} (not counted as spend)`);
   }
 
   await sendTelegramMessage(chatId, lines.join('\n'), 'HTML');
@@ -140,18 +165,20 @@ async function handleListCommand(chatId: number, countArg?: string) {
 }
 
 async function handleExpenseMessage(chatId: number, userId: number, text: string) {
-  const categoryMap = await getCategoryMap();
-  const parsed = parseExpenseMessage(text, categoryMap);
+  const { aliasMap, typeMap } = await getCategoryInfo();
+  const parsed = parseExpenseMessage(text, aliasMap);
 
   if (parsed.amount === null) {
     return; // doesn't look like an expense — ignore quietly (normal chatter)
   }
 
+  const type = typeMap[parsed.category] ?? 'Expense';
   const userName = getUserName(userId);
   const row = await appendExpenseRow({
     date: new Date(),
     amount: parsed.amount,
     category: parsed.category,
+    type,
     note: parsed.note,
     addedBy: userName,
     rawMessage: text,
@@ -159,7 +186,7 @@ async function handleExpenseMessage(chatId: number, userId: number, text: string
 
   const confirmText = parsed.category === 'Uncategorized'
     ? `⚠️ ₹${parsed.amount} logged, but I could not match a category.\nReply to this message with the correct category to fix it.`
-    : `✅ ₹${parsed.amount} logged under ${parsed.category}`;
+    : `✅ ₹${parsed.amount} logged under ${parsed.category}${typeAnnotation(type)}`;
 
   const sent = await sendTelegramMessage(chatId, confirmText);
   if (sent?.message_id && row > 0) {
@@ -171,14 +198,15 @@ async function tryHandleCorrection(chatId: number, repliedToMessageId: number, t
   const row = await getRowForConfirmation(chatId, repliedToMessageId);
   if (row === null) return false;
 
-  const categoryMap = await getCategoryMap();
-  const newCategory = findCategory(text, categoryMap);
+  const { aliasMap, typeMap } = await getCategoryInfo();
+  const newCategory = findCategory(text, aliasMap);
   if (newCategory === 'Uncategorized') {
     await sendTelegramMessage(chatId, "Didn't recognize that category. Add it to the Categories sheet if needed.");
     return true;
   }
 
-  await updateExpenseCategory(row, newCategory);
-  await sendTelegramMessage(chatId, `✅ Updated to ${newCategory}`);
+  const type = typeMap[newCategory] ?? 'Expense';
+  await updateExpenseCategory(row, newCategory, type);
+  await sendTelegramMessage(chatId, `✅ Updated to ${newCategory}${typeAnnotation(type)}`);
   return true;
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllExpenses, getBudgetsForMonth, getSentBudgetAlerts, recordBudgetAlerts } from '@/lib/sheets';
+import { getAllExpenses, getBudgetsForMonth, getSentBudgetAlerts, recordBudgetAlerts, getCategoryTypeMap } from '@/lib/sheets';
 import { buildDailyRecap, formatChange, topCategory } from '@/lib/recap';
 import { currentMonthKey, aggregateByCategory, formatDayLabel } from '@/lib/aggregate';
 import { computeBudgetAlerts, formatBudgetAlertMessage } from '@/lib/budgetAlerts';
@@ -40,9 +40,12 @@ export async function GET(req: NextRequest) {
     // only allows one cron job per schedule, so this avoids adding a second entry.
     const month = currentMonthKey();
     const categoryTotals = aggregateByCategory(expenses, month);
-    const budgetInfo = await getBudgetsForMonth(month);
-    const alreadySent = await getSentBudgetAlerts(month);
-    const newAlerts = computeBudgetAlerts(categoryTotals, budgetInfo.budgets, alreadySent);
+    const [budgetInfo, alreadySent, categoryTypes] = await Promise.all([
+      getBudgetsForMonth(month),
+      getSentBudgetAlerts(month),
+      getCategoryTypeMap(),
+    ]);
+    const newAlerts = computeBudgetAlerts(categoryTotals, budgetInfo.budgets, alreadySent, categoryTypes);
 
     if (newAlerts.length) {
       const alertText = newAlerts.map(formatBudgetAlertMessage).join('\n\n');

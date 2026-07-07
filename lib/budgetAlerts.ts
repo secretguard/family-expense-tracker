@@ -14,16 +14,23 @@ export interface BudgetAlert {
  * `alreadySent` (built from the BudgetAlerts sheet — see lib/sheets.ts). 80% and 100%
  * are checked independently so both fire in the same run if spend jumps straight past
  * both in one entry.
+ *
+ * Only Expense-type categories are ever alerted on — Investments/Transfers aren't
+ * "spend," so a budget row accidentally set on one of those categories is silently
+ * ignored here rather than triggering a nonsensical overspend alert.
  */
 export function computeBudgetAlerts(
   categoryTotals: Record<string, number>,
   budgets: BudgetMap,
-  alreadySent: Set<string>
+  alreadySent: Set<string>,
+  categoryTypes: Record<string, string>
 ): BudgetAlert[] {
   const alerts: BudgetAlert[] = [];
 
   for (const [category, budget] of Object.entries(budgets)) {
     if (budget <= 0) continue;
+    if ((categoryTypes[category] ?? 'Expense') !== 'Expense') continue;
+
     const spent = categoryTotals[category] || 0;
     const pct = spent / budget;
 
